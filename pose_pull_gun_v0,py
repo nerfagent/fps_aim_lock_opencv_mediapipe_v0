@@ -1,0 +1,101 @@
+import cv2
+import mediapipe as mp
+import time
+import numpy as np
+import pyautogui
+import keyboard
+
+"""
+    work for csgo instead of cs2 becuz cs2 cant turn off raw input
+    perhaps also work for other games with raw input option, but obviously i cant test all of them
+
+    Raw input : off
+    Mouse acceleration : off
+    sensivity : 1.70
+    screen_size : height = screen_size.height / 3 , width = screen_size.width / 3
+
+"""
+
+# Get the size of the primary screen
+screen_size = pyautogui.size()
+print("Primary screen size:", screen_size)
+x_offset = screen_size.width / 3
+y_offset = screen_size.height / 3
+width = screen_size.width / 3     # Width of detection zone
+height = screen_size.height / 3    # Height of the detection zone
+
+# MediaPipe setup for pose detection
+mpPose = mp.solutions.pose
+pose = mpPose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+mpDraw = mp.solutions.drawing_utils
+poseStyle = mpDraw.DrawingSpec(color=(255, 0, 0), thickness=2) # Red color landmark
+
+frame_skip = 2
+frame_count = 0
+pTime = 0
+
+# Flag to control aim lock functionality
+aim_lock_active = False
+oTime = 0
+
+while True:
+    if frame_count % frame_skip == 0:
+        imgRGB = pyautogui.screenshot(region=(x_offset, y_offset, width, height))
+        img = np.array(imgRGB)
+        imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        # Process the image for pose detection
+        result = pose.process(imgRGB)
+
+        # Draw the pose landmarks
+        if result.pose_landmarks:
+            # mpDraw.draw_landmarks(img, result.pose_landmarks, mpPose.POSE_CONNECTIONS, poseStyle)
+            mpDraw.draw_landmarks(img, result.pose_landmarks)
+            
+            # Get the height and width of the image for landmark positions
+            imgHeight, imgWidth, _ = img.shape
+
+            # Define larger size for eye landmarks
+            eye_landmark_indices = [mpPose.PoseLandmark.LEFT_EYE.value, mpPose.PoseLandmark.RIGHT_EYE.value]
+            eye_radius = 6  # Larger radius for eyes
+            eye_positions = []
+
+            for index in eye_landmark_indices:
+                lm = result.pose_landmarks.landmark[index]
+                xPos = int(lm.x * imgWidth)
+                yPos = int(lm.y * imgHeight)
+                eye_positions.append((xPos, yPos))
+                cv2.circle(img, (xPos, yPos), eye_radius, (0, 255, 0), cv2.FILLED)  # Green color for eyes
+
+            # Move mouse to the average position of the eyes
+            if eye_positions and aim_lock_active:
+                avg_x = int((eye_positions[0][0] + eye_positions[1][0]) / 2)
+                avg_y = int((eye_positions[0][1] + eye_positions[1][1]) / 2)
+                screen_x = x_offset + avg_x  # Adjust for screen offset
+                screen_y = y_offset + avg_y  # Adjust for screen offset
+                pyautogui.moveTo(screen_x, screen_y)
+
+        # Calculate FPS
+        cTime = time.time()
+        fps = 1 / (cTime - pTime)
+        pTime = cTime
+        cv2.putText(img, f"FPS : {int(fps)}", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 3)
+        if aim_lock_active:
+            cv2.putText(img, "ON", (30, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 3)
+        else:
+            cv2.putText(img, "OFF", (30, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+
+    frame_count += 1
+
+    cv2.imshow('Screen Capture - Second Monitor', img)
+
+    # Check if the 'o' key was pressed to toggle aim lock
+    if keyboard.is_pressed('o') and cTime - oTime > 1 :  # Toggle aim lock on 'o' key press
+        oTime = cTime
+        aim_lock_active = not aim_lock_active
+        print("Aim Lock Active:", aim_lock_active)
+
+    if cv2.waitKey(1) == ord('p'): # button to shut this program down
+        break
+
+cv2.destroyAllWindows()
